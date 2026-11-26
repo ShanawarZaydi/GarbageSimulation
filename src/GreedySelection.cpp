@@ -49,7 +49,7 @@ DispatchDecision GreedySelection::selectNearestEligibleTruck(
             continue;
         }
 
-        RouteResult route = graph.dijkstra(t.currentNode, req.nodeId, false);
+        RouteResult route = graph.dijkstra(t.getEffectiveStartNode(), req.nodeId, false);
         if (!route.reachable) {
             unreachableCount++;
             continue;

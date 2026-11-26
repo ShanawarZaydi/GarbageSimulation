@@ -23,6 +23,8 @@ using json = nlohmann::json;
 
 namespace {
     const int DISPOSAL_NODE_ID = 29;
+    const int CHARGING_NODE_IDS[2] = {7, 126};
+    const int CHARGING_STATION_COUNT = 2;
     const double TRUCK_SPEED_MPS = 32.0;
     const double BATTERY_PER_METER = 0.008;
     const double DEFAULT_GARBAGE_QTY = 35.0;
@@ -77,7 +79,7 @@ void tryDispatchPendingRequests(SimulationState& sim) {
             truck.status = TruckStatus::Travelling;
             truck.assignedRequestId = req.id;
             truck.assignmentReason = decision.reason;
-            truck.assignRoute(decision.route.nodePath, decision.route.geometry, false);
+            truck.assignRouteSmoothly(decision.route.nodePath, decision.route.geometry);
 
             req.status = RequestStatus::Travelling;
             req.assignedTruckId = truck.id;
@@ -87,6 +89,34 @@ void tryDispatchPendingRequests(SimulationState& sim) {
         } else {
             req.statusNote = decision.reason;
         }
+    }
+}
+
+void sendTruckToCharge(SimulationState& sim, Truck& truck) {
+    int startNode = truck.getEffectiveStartNode();
+    RouteResult bestRoute;
+    bestRoute.reachable = false;
+    int bestStationId = -1;
+
+    for (int i = 0; i < CHARGING_STATION_COUNT; i++) {
+        RouteResult candidate = sim.graph.dijkstra(startNode, CHARGING_NODE_IDS[i], false);
+        if (candidate.reachable && (!bestRoute.reachable || candidate.totalDistance < bestRoute.totalDistance)) {
+            bestRoute = candidate;
+            bestStationId = CHARGING_NODE_IDS[i];
+        }
+    }
+
+    if (bestRoute.reachable) {
+        truck.status = TruckStatus::GoingToCharge;
+        truck.assignRouteSmoothly(bestRoute.nodePath, bestRoute.geometry);
+        truck.assignmentReason = "Battery <= 10% -> heading to Charging Station (Node " + to_string(bestStationId) + ")";
+        sim.lastDispatchMessage = truck.id + " battery low (" +
+            to_string(static_cast<int>(truck.battery)) + "%), routing to nearest Charging Station (Node " +
+            to_string(bestStationId) + ").";
+    } else {
+        truck.status = TruckStatus::LowBattery;
+        truck.clearRoute();
+        truck.assignmentReason = "Battery critically low (charging stations unreachable)";
     }
 }
 
@@ -104,9 +134,7 @@ void stepSimulation(SimulationState& sim, double dtSeconds) {
 
         if (truck.status == TruckStatus::Available) {
             if (truck.battery <= Truck::CRITICAL_BATTERY) {
-                truck.status = TruckStatus::LowBattery;
-                truck.clearRoute();
-                truck.assignmentReason = "Battery critically low (" + to_string(static_cast<int>(truck.battery)) + "%)";
+                sendTruckToCharge(sim, truck);
                 continue;
             }
 
@@ -180,8 +208,7 @@ void stepSimulation(SimulationState& sim, double dtSeconds) {
                         truck.assignmentReason = "";
                     }
                 } else if (truck.battery <= Truck::CRITICAL_BATTERY) {
-                    truck.status = TruckStatus::LowBattery;
-                    truck.assignmentReason = "Battery critically low";
+                    sendTruckToCharge(sim, truck);
                 } else {
                     truck.status = TruckStatus::Available;
                     truck.assignmentReason = "";
@@ -200,19 +227,33 @@ void stepSimulation(SimulationState& sim, double dtSeconds) {
                 truck.currentLoad = 0.0;
                 truck.assignmentReason = "";
                 if (truck.battery <= Truck::CRITICAL_BATTERY) {
-                    truck.status = TruckStatus::LowBattery;
-                    truck.assignmentReason = "Battery critically low";
+                    sendTruckToCharge(sim, truck);
                 } else {
                     truck.status = TruckStatus::Available;
                     sim.lastDispatchMessage = truck.id + " emptied at Disposal Station and returned to service.";
                 }
+            }
+        } else if (truck.status == TruckStatus::GoingToCharge) {
+            bool arrived = truck.advanceMovement(dtSeconds, TRUCK_SPEED_MPS, BATTERY_PER_METER, sim.graph);
+            if (arrived) {
+                truck.status = TruckStatus::Charging;
+                truck.stateTimerSeconds = 2.5;
+                truck.clearRoute();
+            }
+        } else if (truck.status == TruckStatus::Charging) {
+            truck.stateTimerSeconds -= dtSeconds;
+            if (truck.stateTimerSeconds <= 0.0) {
+                truck.battery = 100.0;
+                truck.status = TruckStatus::Available;
+                truck.assignmentReason = "";
+                sim.lastDispatchMessage = truck.id + " recharged to 100% at Charging Station and returned to service.";
             }
         }
     }
 }
 
 void initSimulation(SimulationState& sim) {
-    const int startNodes[6] = {5, 7, 14, 19, 30, 40};
+    const int startNodes[6] = {5, 12, 14, 19, 30, 40};
     const double startBatteries[6] = {100.0, 96.0, 92.0, 98.0, 94.0, 90.0};
 
     for (int i = 0; i < 6; i++) {
@@ -275,6 +316,16 @@ int main() {
         }
 
         const GraphNode& disp = sim.graph.getNode(DISPOSAL_NODE_ID);
+        json chargingJson = json::array();
+        for (int i = 0; i < CHARGING_STATION_COUNT; i++) {
+            const GraphNode& chg = sim.graph.getNode(CHARGING_NODE_IDS[i]);
+            chargingJson.push_back({
+                {"nodeId", chg.id},
+                {"lat", chg.lat},
+                {"lon", chg.lon},
+                {"name", "F-6 Charging Station " + to_string(i + 1)}
+            });
+        }
         out["edges"] = edgesJson;
         out["disposalStation"] = {
             {"nodeId", disp.id},
@@ -282,6 +333,7 @@ int main() {
             {"lon", disp.lon},
             {"name", "F-6 Disposal Station"}
         };
+        out["chargingStations"] = chargingJson;
         out["nodeCount"] = sim.graph.getNodeCount();
         out["edgeCount"] = sim.graph.getEdgeCount();
 

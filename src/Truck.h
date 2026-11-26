@@ -13,6 +13,8 @@ enum class TruckStatus {
     Collecting,
     Returning,
     Disposing,
+    GoingToCharge,
+    Charging,
     LowBattery
 };
 
@@ -48,10 +50,13 @@ public:
     double getRemainingCapacity() const;
     bool isFull() const;
     bool hasRoute() const;
+    int getEffectiveStartNode() const;
 
     void assignRoute(const std::vector<int>& nodes,
                      const std::vector<std::pair<double, double>>& geometry,
                      bool roaming);
+    void assignRouteSmoothly(const std::vector<int>& dijkstraNodes,
+                             const std::vector<std::pair<double, double>>& dijkstraGeom);
     void clearRoute();
 
     // Advances the truck along routeGeometry; returns true when destination is reached.

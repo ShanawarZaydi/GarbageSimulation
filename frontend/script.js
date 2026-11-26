@@ -21,6 +21,7 @@ const truckMarkers = {};
 const truckTargets = {};
 const requestMarkers = {};
 let disposalMarker = null;
+const chargingMarkers = [];
 
 function createCircleIcon(color, size, borderColor = "#111827", label = "") {
     return L.divIcon({
@@ -101,6 +102,22 @@ async function loadRoadNetwork() {
                 </div>
             `);
         }
+
+        if (data.chargingStations && Array.isArray(data.chargingStations)) {
+            data.chargingStations.forEach((c, idx) => {
+                const m = L.marker([c.lat, c.lon], {
+                    icon: createCircleIcon("#0284c7", 20, "#ffffff", `C${idx + 1}`)
+                }).addTo(disposalLayer);
+                m.bindPopup(`
+                    <div>
+                        <b>${c.name}</b><br>
+                        <b>Graph Node:</b> ${c.nodeId}<br>
+                        <b>Coordinates:</b> ${c.lat.toFixed(5)}, ${c.lon.toFixed(5)}
+                    </div>
+                `);
+                chargingMarkers.push(m);
+            });
+        }
     } catch (err) {
         console.error("Failed to load graph:", err);
     }
@@ -135,7 +152,9 @@ async function pollState() {
             }
 
             if (t.activeRoute && t.activeRoute.length >= 2) {
-                const routeColor = t.status === "Returning" ? "#6d28d9" : "#eab308";
+                let routeColor = "#eab308";
+                if (t.status === "Returning") routeColor = "#6d28d9";
+                else if (t.status === "GoingToCharge") routeColor = "#0284c7";
                 L.polyline(t.activeRoute, {
                     color: routeColor,
                     weight: 4,

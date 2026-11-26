@@ -10,6 +10,8 @@ string truckStatusToString(TruckStatus status) {
         case TruckStatus::Collecting: return "Collecting";
         case TruckStatus::Returning: return "Returning";
         case TruckStatus::Disposing: return "Disposing";
+        case TruckStatus::GoingToCharge: return "GoingToCharge";
+        case TruckStatus::Charging: return "Charging";
         case TruckStatus::LowBattery: return "LowBattery";
     }
     return "Available";
@@ -60,6 +62,13 @@ bool Truck::hasRoute() const {
     return routeGeometry.size() >= 2 && geomIndex + 1 < static_cast<int>(routeGeometry.size());
 }
 
+int Truck::getEffectiveStartNode() const {
+    if (hasRoute() && isRoaming && !routeNodes.empty()) {
+        return routeNodes.back();
+    }
+    return currentNode;
+}
+
 void Truck::assignRoute(const vector<int>& nodes,
                         const vector<pair<double, double>>& geometry,
                         bool roaming) {
@@ -72,6 +81,39 @@ void Truck::assignRoute(const vector<int>& nodes,
         lat = routeGeometry[0].first;
         lon = routeGeometry[0].second;
     }
+}
+
+void Truck::assignRouteSmoothly(const vector<int>& dijkstraNodes,
+                                const vector<pair<double, double>>& dijkstraGeom) {
+    if (!(hasRoute() && isRoaming)) {
+        assignRoute(dijkstraNodes, dijkstraGeom, false);
+        return;
+    }
+
+    vector<int> combinedNodes;
+    vector<pair<double, double>> combinedGeom;
+
+    combinedGeom.push_back({lat, lon});
+    for (int k = geomIndex + 1; k < static_cast<int>(routeGeometry.size()); k++) {
+        combinedGeom.push_back(routeGeometry[k]);
+    }
+
+    if (!routeNodes.empty()) {
+        combinedNodes.push_back(routeNodes.back());
+    }
+
+    for (int k = 1; k < static_cast<int>(dijkstraNodes.size()); k++) {
+        combinedNodes.push_back(dijkstraNodes[k]);
+    }
+    for (int k = 1; k < static_cast<int>(dijkstraGeom.size()); k++) {
+        combinedGeom.push_back(dijkstraGeom[k]);
+    }
+
+    routeNodes = combinedNodes;
+    routeGeometry = combinedGeom;
+    geomIndex = 0;
+    segmentProgressMeters = 0.0;
+    isRoaming = false;
 }
 
 void Truck::clearRoute() {
