@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Garbage Collection — F-6 Islamabad</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="status-overlay">
+        <div id="status-counts">
+            Trucks: <span id="stat-trucks">0/0</span> |
+            Active: <span id="stat-active">0</span> |
+            Cleaned: <span id="stat-cleaned">0</span>
+        </div>
+        <div id="status-message">Connecting to C++ simulation...</div>
+    </div>
+
+    <div id="legend">
+        <div class="legend-title">F-6 Map Legend</div>
+        <div class="legend-item"><span class="dot truck"></span> Moving Truck</div>
+        <div class="legend-item"><span class="dot garbage-pending"></span> Uncollected Garbage</div>
+        <div class="legend-item"><span class="dot garbage-cleaned"></span> Cleaned Garbage</div>
+        <div class="legend-item"><span class="dot disposal"></span> Disposal Station</div>
+        <div class="legend-hint">Click map to report garbage</div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

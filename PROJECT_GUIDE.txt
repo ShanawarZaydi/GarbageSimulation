@@ -1,0 +1,193 @@
+================================================================================
+        SMART GARBAGE COLLECTION SYSTEM (F-6 ISLAMABAD) - COMPLETE GUIDE
+================================================================================
+
+SAB SE PEHLE EK IMPORTANT SAWAL KA JAWAB:
+Kya is project (code) ke andar koi AI Agent use hua hai?
+--------------------------------------------------------------------------------
+JAWAB: NAHI! Is project ke code/runtime mein koi AI Agent, LLM, ya Machine Learning
+use NAHI hui hai.
+Yeh poora project 100% pure C++ Data Structures & Algorithms (DSA) par chalta hai:
+  1. Graph (Adjacency List)
+  2. Manual MinHeap (Priority Queue)
+  3. Dijkstra's Algorithm (Shortest Path)
+  4. Greedy Algorithm (Nearest Eligible Truck Selection)
+  5. Manual Hash Table (Fast ID Lookup)
+
+(Project likhne mein aapne AI coding assistant ki madad zaroor li hai, lekin jab
+application chalti hai to saare faislay C++ ke DSA algorithms khud karte hain.)
+
+
+================================================================================
+1. POORA SYSTEM KAISE KAAM KARTA HAI? (SIMPLE FLOW)
+================================================================================
+1. Jab aap SmartGarbage.exe chalate hain, C++ backend `data/graph.json` se F-6
+   Islamabad ki asli roads load karta hai (768 nodes aur 1725 road edges).
+2. C++ mein 6 trucks (TRK-1 se TRK-6) alag-alag F-6 road nodes par spawn hote
+   hain aur khud-ba-khud connected roads par ghoomna (roam karna) shuru karte hain.
+3. Browser mein http://localhost:8080 kholne par poori screen par F-6 ka map
+   nazar aata hai (Leaflet.js + OpenStreetMap).
+4. Jab user map par kahin click karta hai:
+   - Browser clicked (lat, lon) C++ server ko bhejta hai.
+   - C++ us click ko sab se qareebi valid road node par "snap" karta hai.
+   - Map par BROWN marker aa jata hai.
+   - C++ ka Greedy Algorithm saare trucks check karta hai (Available hai?
+     Capacity khali hai? Battery reserve kaafi hai?) aur Dijkstra se sab se
+     qareebi truck select karke route nikalta hai.
+5. Truck asli road geometry par chalta hua wahan pahunchta hai, garbage collect
+   karta hai, aur marker BROWN se GREEN ho jata hai.
+6. Agar truck ki capacity full (100 kg) ho jaye, to C++ Dijkstra se F-6 Disposal
+   Station (Node 29 - Purple marker) ka rasta nikalta hai. Truck wahan ja kar
+   kachra khali karta hai aur dubara Available ho jata hai.
+
+
+================================================================================
+2. HAR FILE MEIN KYA KAAM HO RAHA HAI? (FILE-BY-FILE EASY EXPLANATION)
+================================================================================
+
+--- [A] DATA FILES (data/) ---
+
+1. data/graph.json
+   - Isme F-6 Islamabad ka asli road network hai.
+   - `nodes`: 768 intersections/points (har node ka `id`, `osm_id`, `lat`, `lon`).
+   - `edges`: 1725 road connections (`from`, `to`, `length` meters mein, `time`
+     seconds mein, aur `geometry` jo road ke asal mor/curves ke coordinates hain).
+
+2. data/road_names.json
+   - Isme F-6 ki roads ke naam aur unke node IDs ka record hai (aapka diya hua
+     original data).
+
+
+--- [B] THIRD-PARTY HEADERS (include/) ---
+
+3. include/json.hpp
+   - Yeh single-header C++ library (`nlohmann/json`) hai.
+   - Kaam: `graph.json` ko read karna aur frontend ke sath JSON format mein data
+     exchange karna.
+
+4. include/httplib.h
+   - Yeh lightweight single-header C++ HTTP server library (`cpp-httplib`) hai.
+   - Kaam: C++ se direct web server chalana (bina Python/Flask ke) jo frontend
+     files serve karta hai aur API requests handle karta hai.
+
+
+--- [C] C++ DSA & BACKEND FILES (src/) ---
+
+5. src/MinHeap.h & src/MinHeap.cpp
+   - DSA Concept: Manual Binary MinHeap (Priority Queue).
+   - Humne C++ ki built-in `std::priority_queue` use NAHI ki, balkay apna khud
+     ka MinHeap banaya hai.
+   - `push(cost, nodeId)`: Naya node heap mein daalta hai aur `heapifyUp()` se
+     sab se choti cost wala node upar le aata hai.
+   - `pop()`: Sab se kam cost wala node nikalta hai aur `heapifyDown()` se heap
+     ko dubara set karta hai.
+   - Use: Dijkstra's algorithm mein sab se qareebi unvisited node pick karne ke liye.
+
+6. src/Graph.h & src/Graph.cpp
+   - DSA Concept: Graph using Adjacency List + Dijkstra's Algorithm.
+   - `loadFromJson()`: `data/graph.json` se saare nodes aur edges adjacency list
+     (`adjList`) mein store karta hai.
+   - `dijkstra(startId, endId, byTime)`: Hamara manual `MinHeap` use karke ek
+     node se doosre node tak sab se chota rasta (distance ya time ke hisaab se)
+     aur uski poori road `geometry` nikalta hai.
+   - `findNearestNode(lat, lon)`: Haversine formula se user ke map click ko sab
+     se qareebi valid road node se jorta hai.
+
+7. src/HashTable.h & src/HashTable.cpp
+   - DSA Concept: Manual Hash Table (Separate Chaining).
+   - Humne `std::unordered_map` ki jagah apna Hash Table banaya hai (103 buckets).
+   - `hashFunction()`: String key (jaise `"TRK-1"` ya `"REQ-1"`) ko bucket index
+     mein convert karta hai.
+   - `insert()`, `find()`, `remove()`, `contains()`: O(1) average time mein
+     truck ya garbage request ko uski ID se dhundne ke liye.
+
+8. src/Truck.h & src/Truck.cpp
+   - Har garbage truck ki class aur movement logic.
+   - Data: `id`, `currentNode`, `previousNode`, `lat/lon`, `maxCapacity` (100 kg),
+     `currentLoad`, `battery` (%), `status` (`Available`, `Travelling`,
+     `Collecting`, `Returning`, `Disposing`, `LowBattery`), `assignedRequestId`.
+   - `advanceMovement()`: Truck ko seedhi line mein teleport karne ke bajaye road
+     ki `geometry` points par smoothly aage badhata hai aur distance ke hisaab se
+     battery kam karta hai.
+
+9. src/GarbageRequest.h & src/GarbageRequest.cpp
+   - User ki taraf se report ki gayi har garbage request ka structure.
+   - Data: `id`, `requestCode` (`REQ-1`, ...), `nodeId` (snapped graph node),
+     `lat/lon`, `totalQuantity`, `remainingQuantity`, `status` (`Pending`,
+     `Assigned`, `Travelling`, `Collecting`, `Cleaned`), `assignedTruckId`, aur
+     `statusNote`.
+
+10. src/GreedySelection.h & src/GreedySelection.cpp
+    - DSA Concept: Greedy Algorithm for Truck Dispatch.
+    - `selectNearestEligibleTruck()`:
+      1. Saare trucks check karta hai.
+      2. Jo busy, full, ya low-battery hain unko ignore karta hai.
+      3. Check karta hai ke truck ke paas garbage location tak jane + collect
+         karne + disposal reserve (15%) ke liye kaafi battery hai ya nahi.
+      4. Dijkstra se road distance nikal kar sab se qareebi (minimum distance)
+         eligible truck select karta hai.
+      5. Agar koi truck free na ho to clear reason deta hai aur request ko
+         `Pending` rakhta hai.
+
+11. src/main.cpp
+    - Pooray C++ backend ka main controller aur simulation engine.
+    - `initSimulation()`: 6 trucks ko alag-alag F-6 nodes `{5, 7, 14, 19, 30, 40}`
+      par start karta hai aur Disposal Station ko connected `Node 29` par set
+      karta hai.
+    - `pickNextRoamingNode()`: Jab truck `Available` hota hai to agla connected
+      road node choose karta hai (foran wapas peeche mudne se bachta hai).
+    - `stepSimulation()`: Background thread mein har 100ms chalta hai — pending
+      requests dispatch karta hai, trucks ko roads par chalata hai, collection
+      complete hone par marker `Cleaned` karta hai, aur full trucks ko Disposal
+      Station bhej kar khali karwata hai.
+    - HTTP Endpoints:
+      - `GET /` -> `frontend/` folder serve karta hai.
+      - `GET /api/graph` -> Map par roads aur Disposal Station dikhane ke liye.
+      - `GET /api/state` -> Trucks aur requests ki live state bhejta hai.
+      - `POST /api/request` -> Naya map click receive karke request banata hai.
+
+
+--- [D] FRONTEND FILES (frontend/) ---
+
+12. frontend/index.html
+    - Full-screen map ka HTML page, Leaflet CSS/JS links, chota status box, aur
+      chota map legend.
+
+13. frontend/style.css
+    - Map ko poori browser screen (`100vw x 100vh`) par fit karta hai aur legend /
+      status box ko cleanly corner mein rakhta hai.
+
+14. frontend/script.js
+    - OpenStreetMap tiles aur Leaflet map load karta hai.
+    - `/api/graph` se F-6 roads aur Purple Disposal Station (`D`) draw karta hai.
+    - Har 150ms mein `/api/state` se live data le kar Yellow trucks ko smoothly
+      animate karta hai, aur Brown (uncollected) / Green (cleaned) markers update
+      karta hai.
+    - Map par click karne par `/api/request` par POST request bhejta hai.
+
+
+--- [E] BUILD & PROJECT FILES ---
+
+15. CMakeLists.txt & Makefile
+    - Project ko compile karne ke build scripts (`SmartGarbage.exe` banane ke liye).
+
+16. README.md & .gitignore
+    - GitHub documentation (run commands, architecture) aur build artifacts ko git
+      se ignore karne ki file.
+
+
+================================================================================
+3. VIVA / PRESENTATION KE LIYE QUICK DSA SUMMARY
+================================================================================
+Agar teacher poochen ke kaunsa DSA kahan use hua hai, to yeh bolein:
+- Graph (Adjacency List): F-6 road network (768 nodes, 1725 edges) store karne
+  ke liye (`Graph.cpp`).
+- Manual MinHeap: Dijkstra ke liye shortest-cost node O(log V) mein nikalne ke
+  liye (`MinHeap.cpp`).
+- Dijkstra's Algorithm: Truck-to-garbage aur truck-to-disposal shortest road
+  route nikalne ke liye (`Graph.cpp`).
+- Greedy Algorithm: Eligibility check karke sab se qareebi truck select karne ke
+  liye (`GreedySelection.cpp`).
+- Manual Hash Table: Truck ID aur Request ID se fast lookup ke liye
+  (`HashTable.cpp`).
+================================================================================
