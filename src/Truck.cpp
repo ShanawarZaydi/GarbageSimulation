@@ -1,18 +1,21 @@
 #include "Truck.h"
 
+#include <algorithm>
+
 using namespace std;
 
 string truckStatusToString(TruckStatus status) {
     switch (status) {
         case TruckStatus::Available: return "Available";
-        case TruckStatus::Assigned: return "Assigned";
         case TruckStatus::Travelling: return "Travelling";
         case TruckStatus::Collecting: return "Collecting";
         case TruckStatus::Returning: return "Returning";
         case TruckStatus::Disposing: return "Disposing";
         case TruckStatus::GoingToCharge: return "GoingToCharge";
+        case TruckStatus::WaitingToCharge: return "WaitingToCharge";
         case TruckStatus::Charging: return "Charging";
         case TruckStatus::LowBattery: return "LowBattery";
+        case TruckStatus::RoadBlocked: return "RoadBlocked";
     }
     return "Available";
 }
@@ -26,7 +29,9 @@ Truck::Truck()
       currentLoad(0.0),
       battery(100.0),
       status(TruckStatus::Available),
+      roadBlockedFromStatus(TruckStatus::Available),
       assignedRequestId(-1),
+      chargingStationNodeId(-1),
       geomIndex(0),
       segmentProgressMeters(0.0),
       isRoaming(false),
@@ -43,7 +48,9 @@ Truck::Truck(const string& truckId, int startNode, double startLat, double start
       currentLoad(0.0),
       battery(initialBattery),
       status(TruckStatus::Available),
+      roadBlockedFromStatus(TruckStatus::Available),
       assignedRequestId(-1),
+      chargingStationNodeId(-1),
       geomIndex(0),
       segmentProgressMeters(0.0),
       isRoaming(false),
@@ -62,8 +69,26 @@ bool Truck::hasRoute() const {
     return routeGeometry.size() >= 2 && geomIndex + 1 < static_cast<int>(routeGeometry.size());
 }
 
+double Truck::getRemainingRouteDistanceMeters() const {
+    if (!hasRoute()) {
+        return 0.0;
+    }
+
+    double distance = 0.0;
+    for (int i = geomIndex; i + 1 < static_cast<int>(routeGeometry.size()); i++) {
+        double segmentDistance = Graph::haversineMeters(
+            routeGeometry[i].first, routeGeometry[i].second,
+            routeGeometry[i + 1].first, routeGeometry[i + 1].second
+        );
+        distance += i == geomIndex
+            ? max(0.0, segmentDistance - segmentProgressMeters)
+            : segmentDistance;
+    }
+    return distance;
+}
+
 int Truck::getEffectiveStartNode() const {
-    if (hasRoute() && isRoaming && !routeNodes.empty()) {
+    if (hasRoute() && !routeNodes.empty()) {
         return routeNodes.back();
     }
     return currentNode;
@@ -85,7 +110,7 @@ void Truck::assignRoute(const vector<int>& nodes,
 
 void Truck::assignRouteSmoothly(const vector<int>& dijkstraNodes,
                                 const vector<pair<double, double>>& dijkstraGeom) {
-    if (!(hasRoute() && isRoaming)) {
+    if (!(hasRoute() && !routeNodes.empty())) {
         assignRoute(dijkstraNodes, dijkstraGeom, false);
         return;
     }

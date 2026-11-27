@@ -22,9 +22,35 @@ html, body {
     border-radius: 8px;
     padding: 8px 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
-    max-width: 440px;
+    width: calc(100vw - 82px);
+    max-width: 860px;
+    max-height: calc(100vh - 24px);
+    box-sizing: border-box;
+    overflow: hidden;
     font-size: 13px;
     color: #111827;
+}
+
+#status-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#status-toggle {
+    padding: 3px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #111827;
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+}
+
+#status-overlay.collapsed #status-details {
+    display: none;
 }
 
 #status-counts {
@@ -35,6 +61,85 @@ html, body {
 #status-message {
     font-size: 12px;
     color: #374151;
+}
+
+#route-control,
+#map-action-control {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 6px;
+    font-size: 11px;
+}
+
+#route-algorithm,
+#map-action {
+    padding: 3px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #111827;
+    font: inherit;
+}
+
+#route-control span {
+    color: #64748b;
+}
+
+#truck-statuses {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+    max-height: 34vh;
+    overflow-y: auto;
+}
+
+.truck-card {
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid #dbe3ee;
+    border-radius: 6px;
+    background: #f8fafc;
+}
+
+.truck-card-heading,
+.truck-card-details {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.truck-card-heading {
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.truck-card-task {
+    overflow: hidden;
+    margin: 3px 0;
+    color: #475569;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.truck-card-details {
+    color: #334155;
+    font-size: 10px;
+}
+
+.battery-meter {
+    height: 4px;
+    margin-top: 4px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: #e2e8f0;
+}
+
+.battery-meter-fill {
+    height: 100%;
+    border-radius: inherit;
 }
 
 #legend {
@@ -97,4 +202,17 @@ html, body {
 
 .dot.charging {
     background-color: #0284c7;
+}
+
+@media (max-width: 640px) {
+    #truck-statuses {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        max-height: 30vh;
+    }
+}
+
+@media (max-width: 420px) {
+    #truck-statuses {
+        grid-template-columns: 1fr;
+    }
 }

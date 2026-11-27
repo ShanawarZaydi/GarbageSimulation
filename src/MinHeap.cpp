@@ -73,11 +73,3 @@ HeapNode MinHeap::top() const {
 bool MinHeap::empty() const {
     return heap.empty();
 }
-
-int MinHeap::size() const {
-    return static_cast<int>(heap.size());
-}
-
-void MinHeap::clear() {
-    heap.clear();
-}

@@ -8,14 +8,15 @@
 
 enum class TruckStatus {
     Available,
-    Assigned,
     Travelling,
     Collecting,
     Returning,
     Disposing,
     GoingToCharge,
+    WaitingToCharge,
     Charging,
-    LowBattery
+    LowBattery,
+    RoadBlocked
 };
 
 std::string truckStatusToString(TruckStatus status);
@@ -33,7 +34,9 @@ public:
     double battery;
 
     TruckStatus status;
+    TruckStatus roadBlockedFromStatus;
     int assignedRequestId;
+    int chargingStationNodeId;
     std::string assignmentReason;
 
     std::vector<int> routeNodes;
@@ -50,6 +53,7 @@ public:
     double getRemainingCapacity() const;
     bool isFull() const;
     bool hasRoute() const;
+    double getRemainingRouteDistanceMeters() const;
     int getEffectiveStartNode() const;
 
     void assignRoute(const std::vector<int>& nodes,

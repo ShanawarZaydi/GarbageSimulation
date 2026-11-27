@@ -5,7 +5,6 @@
 
 enum class RequestStatus {
     Pending,
-    Assigned,
     Travelling,
     Collecting,
     Cleaned
@@ -19,17 +18,16 @@ struct GarbageRequest {
     int nodeId;
     double lat;
     double lon;
-    double clickedLat;
-    double clickedLon;
     double totalQuantity;
     double remainingQuantity;
+    long long cleanedAtUnixMs;
     RequestStatus status;
     std::string assignedTruckId;
     std::string statusNote;
 
     GarbageRequest();
     GarbageRequest(int reqId, int snappedNodeId, double nodeLat, double nodeLon,
-                   double clickLat, double clickLon, double qty);
+                   double qty);
 };
 
 #endif

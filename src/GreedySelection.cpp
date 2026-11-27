@@ -1,15 +1,60 @@
 #include "GreedySelection.h"
+#include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <limits>
 #include <sstream>
 
 using namespace std;
 
+double GreedySelection::calculatePostCollectionBatteryRequirement(
+    const Graph& graph,
+    const Truck& truck,
+    const GarbageRequest& req,
+    int disposalNodeId,
+    const vector<int>& chargingStationNodeIds,
+    RouteAlgorithm algorithm,
+    double batteryPerMeter
+) {
+    const double amountCollected = min(req.remainingQuantity, truck.getRemainingCapacity());
+    const bool fullAfterCollection =
+        truck.getRemainingCapacity() - amountCollected <= 0.01;
+
+    double postWorkDistance = 0.0;
+    if (fullAfterCollection) {
+        const RouteResult toDisposal =
+            graph.findRoute(req.nodeId, disposalNodeId, algorithm, false);
+        if (!toDisposal.reachable) {
+            return numeric_limits<double>::infinity();
+        }
+
+        const RouteResult toCharger =
+            graph.nearestRoute(disposalNodeId, chargingStationNodeIds, algorithm);
+        if (!toCharger.reachable) {
+            return numeric_limits<double>::infinity();
+        }
+        postWorkDistance = toDisposal.totalDistance + toCharger.totalDistance;
+    } else {
+        const RouteResult toCharger =
+            graph.nearestRoute(req.nodeId, chargingStationNodeIds, algorithm);
+        if (!toCharger.reachable) {
+            return numeric_limits<double>::infinity();
+        }
+        postWorkDistance = toCharger.totalDistance;
+    }
+
+    return Truck::COLLECTION_BATTERY_COST +
+           postWorkDistance * batteryPerMeter +
+           Truck::BATTERY_RESERVE;
+}
+
 DispatchDecision GreedySelection::selectNearestEligibleTruck(
     const Graph& graph,
     const vector<Truck>& trucks,
     const GarbageRequest& req,
     int disposalNodeId,
+    const vector<int>& chargingStationNodeIds,
+    RouteAlgorithm algorithm,
     double batteryPerMeter
 ) {
     DispatchDecision best;
@@ -22,14 +67,15 @@ DispatchDecision GreedySelection::selectNearestEligibleTruck(
     int lowBatteryCount = 0;
     int unreachableCount = 0;
 
-    RouteResult toDisposal = graph.dijkstra(req.nodeId, disposalNodeId, false);
-    double disposalCost = toDisposal.reachable ? (toDisposal.totalDistance * batteryPerMeter) : 0.0;
-
     for (int i = 0; i < static_cast<int>(trucks.size()); i++) {
         const Truck& t = trucks[i];
+        const bool chargingBound =
+            t.status == TruckStatus::GoingToCharge ||
+            t.status == TruckStatus::Charging;
 
-        if (t.status != TruckStatus::Available) {
-            if (t.status == TruckStatus::LowBattery) {
+        if (t.status != TruckStatus::Available && !chargingBound) {
+            if (t.status == TruckStatus::LowBattery ||
+                t.status == TruckStatus::RoadBlocked) {
                 lowBatteryCount++;
             } else if (t.status == TruckStatus::Returning || t.status == TruckStatus::Disposing) {
                 fullCount++;
@@ -49,24 +95,49 @@ DispatchDecision GreedySelection::selectNearestEligibleTruck(
             continue;
         }
 
-        RouteResult route = graph.dijkstra(t.getEffectiveStartNode(), req.nodeId, false);
+        int routeStartNode = chargingBound
+            ? graph.findNearestNode(t.lat, t.lon)
+            : t.getEffectiveStartNode();
+        if (!graph.isValidNode(routeStartNode)) {
+            unreachableCount++;
+            continue;
+        }
+        RouteResult route = graph.findRoute(routeStartNode, req.nodeId, algorithm, false);
         if (!route.reachable) {
             unreachableCount++;
             continue;
         }
 
-        double tripBatteryNeeded = (route.totalDistance * batteryPerMeter) +
-                                   Truck::COLLECTION_BATTERY_COST +
-                                   disposalCost +
-                                   Truck::BATTERY_RESERVE;
+        const double postCollectionBattery =
+            calculatePostCollectionBatteryRequirement(
+                graph, t, req, disposalNodeId, chargingStationNodeIds,
+                algorithm, batteryPerMeter
+            );
+        if (!isfinite(postCollectionBattery)) {
+            unreachableCount++;
+            continue;
+        }
 
-        if (t.battery < tripBatteryNeeded) {
+        double approachDistance = t.isRoaming
+            ? t.getRemainingRouteDistanceMeters()
+            : chargingBound
+                ? Graph::haversineMeters(
+                    t.lat, t.lon,
+                    graph.getNode(routeStartNode).lat,
+                    graph.getNode(routeStartNode).lon
+                )
+                : 0.0;
+        double tripDistance = approachDistance + route.totalDistance;
+        const double tripBatteryNeeded =
+            tripDistance * batteryPerMeter + postCollectionBattery;
+
+        if (t.battery <= tripBatteryNeeded) {
             lowBatteryCount++;
             continue;
         }
 
-        if (route.totalDistance < bestDist) {
-            bestDist = route.totalDistance;
+        if (tripDistance < bestDist) {
+            bestDist = tripDistance;
             best.assigned = true;
             best.truckIndex = i;
             best.truckId = t.id;

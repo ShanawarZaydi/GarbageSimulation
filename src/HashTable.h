@@ -21,9 +21,6 @@ public:
 
     void insert(const std::string& key, int value);
     bool find(const std::string& key, int& outValue) const;
-    bool contains(const std::string& key) const;
-    bool remove(const std::string& key);
-    void clear();
 };
 
 #endif

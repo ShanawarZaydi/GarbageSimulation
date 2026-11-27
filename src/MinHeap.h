@@ -22,8 +22,6 @@ public:
     HeapNode pop();
     HeapNode top() const;
     bool empty() const;
-    int size() const;
-    void clear();
 };
 
 #endif

@@ -17,11 +17,23 @@ struct DispatchDecision {
 
 class GreedySelection {
 public:
+    static double calculatePostCollectionBatteryRequirement(
+        const Graph& graph,
+        const Truck& truck,
+        const GarbageRequest& req,
+        int disposalNodeId,
+        const std::vector<int>& chargingStationNodeIds,
+        RouteAlgorithm algorithm,
+        double batteryPerMeter
+    );
+
     static DispatchDecision selectNearestEligibleTruck(
         const Graph& graph,
         const std::vector<Truck>& trucks,
         const GarbageRequest& req,
         int disposalNodeId,
+        const std::vector<int>& chargingStationNodeIds,
+        RouteAlgorithm algorithm,
         double batteryPerMeter
     );
 };

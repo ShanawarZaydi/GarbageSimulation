@@ -41,26 +41,3 @@ bool HashTable::find(const string& key, int& outValue) const {
     }
     return false;
 }
-
-bool HashTable::contains(const string& key) const {
-    int dummy = 0;
-    return find(key, dummy);
-}
-
-bool HashTable::remove(const string& key) {
-    int idx = hashFunction(key);
-    for (int i = 0; i < static_cast<int>(buckets[idx].size()); i++) {
-        if (buckets[idx][i].key == key) {
-            buckets[idx][i] = buckets[idx].back();
-            buckets[idx].pop_back();
-            return true;
-        }
-    }
-    return false;
-}
-
-void HashTable::clear() {
-    for (int i = 0; i < bucketCount; i++) {
-        buckets[i].clear();
-    }
-}

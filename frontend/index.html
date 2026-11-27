@@ -11,19 +11,44 @@
     <div id="map"></div>
 
     <div id="status-overlay">
-        <div id="status-counts">
-            Trucks: <span id="stat-trucks">0/0</span> |
-            Active: <span id="stat-active">0</span> |
-            Cleaned: <span id="stat-cleaned">0</span>
+        <div id="status-header">
+            <strong>Simulation details</strong>
+            <button id="status-toggle" type="button" aria-controls="status-details" aria-expanded="true">
+                Hide details
+            </button>
         </div>
-        <div id="status-message">Connecting to C++ simulation...</div>
+        <div id="status-details">
+            <div id="status-counts">
+                Trucks: <span id="stat-trucks">0/0</span> |
+                Active: <span id="stat-active">0</span> |
+                Cleaned: <span id="stat-cleaned">0</span>
+            </div>
+            <div id="status-message">Connecting to C++ simulation...</div>
+            <div id="route-control">
+                <label for="route-algorithm">Route planner</label>
+                <select id="route-algorithm">
+                    <option value="dijkstra">Dijkstra</option>
+                    <option value="astar">A*</option>
+                </select>
+                <span>applies to new routes</span>
+            </div>
+            <div id="map-action-control">
+                <label for="map-action">Map action</label>
+                <select id="map-action">
+                    <option value="report">Report garbage</option>
+                    <option value="close-road">Mark road for maintenance</option>
+                    <option value="open-road">Remove maintenance</option>
+                </select>
+            </div>
+            <div id="truck-statuses" aria-live="polite"></div>
+        </div>
     </div>
 
     <div id="legend">
         <div class="legend-title">F-6 Map Legend</div>
         <div class="legend-item"><span class="dot truck"></span> Moving Truck</div>
         <div class="legend-item"><span class="dot garbage-pending"></span> Uncollected Garbage</div>
-        <div class="legend-item"><span class="dot garbage-cleaned"></span> Cleaned Garbage</div>
+        <div class="legend-item"><span class="dot garbage-cleaned"></span> Collected (shown 10s)</div>
         <div class="legend-item"><span class="dot disposal"></span> Disposal Station</div>
         <div class="legend-item"><span class="dot charging"></span> Charging Station</div>
         <div class="legend-hint">Click map to report garbage</div>

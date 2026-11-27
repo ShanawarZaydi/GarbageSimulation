@@ -16,12 +16,26 @@ const routeLayer = L.layerGroup().addTo(map);
 const truckLayer = L.layerGroup().addTo(map);
 const requestLayer = L.layerGroup().addTo(map);
 const disposalLayer = L.layerGroup().addTo(map);
+const maintenanceLayer = L.layerGroup().addTo(map);
 
 const truckMarkers = {};
 const truckTargets = {};
 const requestMarkers = {};
+const collectedMarkerTimers = {};
+const expiredCollectedMarkers = new Set();
 let disposalMarker = null;
-const chargingMarkers = [];
+const chargingMarkers = {};
+const routeAlgorithmSelect = document.getElementById("route-algorithm");
+const mapActionSelect = document.getElementById("map-action");
+const statusOverlay = document.getElementById("status-overlay");
+const statusToggle = document.getElementById("status-toggle");
+let routingUpdatePending = false;
+
+statusToggle.addEventListener("click", () => {
+    const collapsed = statusOverlay.classList.toggle("collapsed");
+    statusToggle.setAttribute("aria-expanded", String(!collapsed));
+    statusToggle.textContent = collapsed ? "Show details" : "Hide details";
+});
 
 function createCircleIcon(color, size, borderColor = "#111827", label = "") {
     return L.divIcon({
@@ -76,6 +90,92 @@ function formatRequestPopup(r) {
     `;
 }
 
+function scheduleCollectedMarkerRemoval(requestCode, cleanedAtUnixMs) {
+    if (expiredCollectedMarkers.has(requestCode) ||
+        Object.prototype.hasOwnProperty.call(collectedMarkerTimers, requestCode)) {
+        return;
+    }
+
+    const remainingMs = Math.max(0, cleanedAtUnixMs + 10000 - Date.now());
+    const removeMarker = () => {
+        const marker = requestMarkers[requestCode];
+        if (marker) {
+            requestLayer.removeLayer(marker);
+            delete requestMarkers[requestCode];
+        }
+        expiredCollectedMarkers.add(requestCode);
+        delete collectedMarkerTimers[requestCode];
+    };
+
+    if (remainingMs === 0) {
+        removeMarker();
+        return;
+    }
+    collectedMarkerTimers[requestCode] = window.setTimeout(removeMarker, remainingMs);
+}
+
+function truckActivity(status) {
+    const activities = {
+        Available: "Patrolling",
+        Assigned: "Assigned to a request",
+        Travelling: "Going to collect garbage",
+        Collecting: "Collecting garbage",
+        Returning: "Going for disposal",
+        Disposing: "Disposing garbage",
+        GoingToCharge: "Going to charge",
+        WaitingToCharge: "Waiting for charging bay",
+        Charging: "Charging battery",
+        LowBattery: "Stopped: critical battery",
+        RoadBlocked: "Stopped: no open route"
+    };
+    return activities[status] || status;
+}
+
+function renderTruckStatuses(trucks) {
+    const container = document.getElementById("truck-statuses");
+    container.innerHTML = trucks.map((truck) => {
+        const battery = Math.max(0, Math.min(100, truck.battery));
+        const batteryColor = battery < 20 ? "#dc2626" : battery < 50 ? "#f59e0b" : "#16a34a";
+        return `
+            <div class="truck-card">
+                <div class="truck-card-heading">
+                    <span>${truck.id}</span>
+                    <span>${battery.toFixed(0)}% battery</span>
+                </div>
+                <div class="battery-meter">
+                    <div class="battery-meter-fill" style="width:${battery}%;background:${batteryColor}"></div>
+                </div>
+                <div class="truck-card-task">${truckActivity(truck.status)}</div>
+                <div class="truck-card-details">
+                    <span>Load</span>
+                    <span>${truck.currentLoad.toFixed(0)} / ${truck.maxCapacity.toFixed(0)} kg</span>
+                </div>
+            </div>
+        `;
+    }).join("");
+}
+
+routeAlgorithmSelect.addEventListener("change", async () => {
+    routingUpdatePending = true;
+    routeAlgorithmSelect.disabled = true;
+    try {
+        const response = await fetch("/api/routing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ algorithm: routeAlgorithmSelect.value })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to update route algorithm");
+        }
+    } catch (err) {
+        console.error("Failed to update route algorithm:", err);
+    } finally {
+        routingUpdatePending = false;
+        routeAlgorithmSelect.disabled = false;
+    }
+});
+
 async function loadRoadNetwork() {
     try {
         const res = await fetch("/api/graph");
@@ -115,7 +215,7 @@ async function loadRoadNetwork() {
                         <b>Coordinates:</b> ${c.lat.toFixed(5)}, ${c.lon.toFixed(5)}
                     </div>
                 `);
-                chargingMarkers.push(m);
+                chargingMarkers[c.nodeId] = m;
             });
         }
     } catch (err) {
@@ -133,6 +233,42 @@ async function pollState() {
         document.getElementById("stat-active").textContent = state.stats.activeRequests;
         document.getElementById("stat-cleaned").textContent = state.stats.cleanedRequests;
         document.getElementById("status-message").textContent = state.lastDispatchMessage;
+        renderTruckStatuses(state.trucks);
+        if (!routingUpdatePending && state.routingAlgorithm) {
+            routeAlgorithmSelect.value = state.routingAlgorithm;
+        }
+
+        if (state.chargingStations && Array.isArray(state.chargingStations)) {
+            state.chargingStations.forEach((station) => {
+                const marker = chargingMarkers[station.nodeId];
+                if (!marker) return;
+                const queueText = station.waitingQueue.length
+                    ? station.waitingQueue.join(", ")
+                    : "Empty";
+                marker.setPopupContent(`
+                    <div>
+                        <b>Charging Station (Node ${station.nodeId})</b><br>
+                        <b>Occupied bays:</b> ${station.occupiedBays} / ${station.bayCapacity}<br>
+                        <b>FIFO waiting queue:</b> ${queueText}
+                    </div>
+                `);
+            });
+        }
+
+        maintenanceLayer.clearLayers();
+        if (state.roadMaintenance && Array.isArray(state.roadMaintenance)) {
+            state.roadMaintenance.forEach((road) => {
+                if (!road.geometry || road.geometry.length < 2) return;
+                L.polyline(road.geometry, {
+                    color: "#dc2626",
+                    weight: 7,
+                    opacity: 0.9,
+                    dashArray: "8, 6"
+                }).bindPopup(
+                    `Road ${road.from}-${road.to} is under maintenance`
+                ).addTo(maintenanceLayer);
+            });
+        }
 
         routeLayer.clearLayers();
 
@@ -166,6 +302,7 @@ async function pollState() {
 
         for (const r of state.requests) {
             const isCleaned = r.status === "Cleaned";
+            if (isCleaned && expiredCollectedMarkers.has(r.requestCode)) continue;
             const color = isCleaned ? "#16a34a" : "#8b4513";
 
             if (!requestMarkers[r.requestCode]) {
@@ -175,11 +312,17 @@ async function pollState() {
                 marker.bindPopup(formatRequestPopup(r));
                 marker._lastStatus = r.status;
                 requestMarkers[r.requestCode] = marker;
+                if (isCleaned) {
+                    scheduleCollectedMarkerRemoval(r.requestCode, r.cleanedAtUnixMs);
+                }
             } else {
                 const marker = requestMarkers[r.requestCode];
                 if (marker._lastStatus !== r.status) {
                     marker.setIcon(createCircleIcon(color, 16, "#ffffff"));
                     marker._lastStatus = r.status;
+                    if (isCleaned) {
+                        scheduleCollectedMarkerRemoval(r.requestCode, r.cleanedAtUnixMs);
+                    }
                 }
                 marker.setPopupContent(formatRequestPopup(r));
             }
@@ -205,6 +348,24 @@ function animateTrucks() {
 
 map.on("click", async (e) => {
     try {
+        if (mapActionSelect.value !== "report") {
+            const response = await fetch("/api/maintenance", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    lat: e.latlng.lat,
+                    lon: e.latlng.lng,
+                    closed: mapActionSelect.value === "close-road"
+                })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || "Failed to update road maintenance");
+            }
+            await pollState();
+            return;
+        }
+
         const res = await fetch("/api/request", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -218,7 +379,8 @@ map.on("click", async (e) => {
             await pollState();
         }
     } catch (err) {
-        console.error("Failed to submit garbage request:", err);
+        console.error("Failed to process map click:", err);
+        document.getElementById("status-message").textContent = err.message;
     }
 });
 
